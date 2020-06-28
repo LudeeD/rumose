@@ -1,10 +1,10 @@
 {
   "posts": [
-    { "id": 1, "title": "json-server", "author": "typicode" },
-    { "id": 2, "title": "json-server", "author": "typicode" }
+    { "id": 1, "title": "rumose", "body": "omg so good!", "author": "ludeed" },
+    { "id": 2, "title": "rumose for life", "body": "I dont have to go to sketchy mock server sites anymore", "author": "ludeed" }
   ],
   "comments": [
-    { "id": 1, "body": "some comment", "postId": 1 }
+    { "id": 1, "body": "Agree ! So good", "postId": 1 }
   ],
-  "profile": { "name": "typicode" }
+  "profile": { "name": "stuff" }
 }
