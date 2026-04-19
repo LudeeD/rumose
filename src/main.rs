@@ -1,64 +1,72 @@
 use std::env;
 use std::fs;
 use std::process;
-use serde_json::{Result, Value};
+use std::sync::Arc;
 
-extern crate tiny_http;
-use tiny_http::{Server, Response};
+use axum::{
+    extract::{Path, State},
+    http::StatusCode,
+    response::{IntoResponse, Response},
+    routing::any,
+    Router,
+};
+use serde_json::Value;
 
+type AppState = Arc<serde_json::Map<String, Value>>;
 
-fn parse_json(input_content: &str) -> Result<Value> {
-    // Parse the string of data into serde_json::Value.
-    let v: Value = serde_json::from_str(input_content)?;
-    Ok(v)
+async fn route_handler(State(map): State<AppState>, Path(key): Path<String>) -> Response {
+    match map.get(&key) {
+        Some(v) => (
+            [("content-type", "application/json")],
+            v.to_string(),
+        )
+            .into_response(),
+        None => (StatusCode::NOT_FOUND, "Not Found").into_response(),
+    }
 }
 
-
-fn main() -> Result<()>{
-
-    let args : Vec<String> = env::args().collect();
-
-    let filename = &args[1];
-
-    let content = fs::read_to_string(filename).expect("damn");
-
-    let v: Value = parse_json(&content).expect("damn");
-    
-    let map= match v {
-        Value::Object(map) => map,
-        _ => process::exit(0)
+#[tokio::main]
+async fn main() {
+    let args: Vec<String> = env::args().collect();
+    let filename = match args.get(1) {
+        Some(f) => f,
+        None => {
+            eprintln!("usage: rumose <routes.json>");
+            process::exit(1);
+        }
     };
 
+    let content = match fs::read_to_string(filename) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("error reading '{}': {}", filename, e);
+            process::exit(1);
+        }
+    };
 
-    let server = Server::http("127.0.0.1:1337").unwrap();
+    let v: Value = match serde_json::from_str(&content) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("error parsing '{}': {}", filename, e);
+            process::exit(1);
+        }
+    };
 
-    for request in server.incoming_requests() {
-        println!("received request! method: {:?}, url: {:?}, headers: {:?}",
-            request.method(),
-            request.url(),
-            request.headers()
-        );
+    let map = match v {
+        Value::Object(map) => map,
+        _ => {
+            eprintln!("error: '{}' must contain a JSON object at the top level", filename);
+            process::exit(1);
+        }
+    };
 
-        let url = request.url().to_string();
-        let route: Vec<&str> = url.split('/').collect();
+    let state: AppState = Arc::new(map);
 
-        if route.len() == 0 {
-            continue
-        };
+    let app = Router::new()
+        .route("/*key", any(route_handler))
+        .with_state(state);
 
-        let values = map.get(route[1]);
-
-        let mut response = match values {
-            Some(v) => Response::from_string(format!("{}",v)),
-            None => Response::from_string("Not Found")
-        };
-
-        let header = tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap();
-
-        response.add_header(header);
-
-        request.respond(response);
-    }
-
-    Ok(())
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:1337").await.unwrap();
+    println!("listening on 127.0.0.1:1337");
+    axum::serve(listener, app).await.unwrap();
 }
